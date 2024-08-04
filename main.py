@@ -4,6 +4,7 @@ from data_fetcher import fetch_binance_data
 from trendline_calculator import calculate_trendlines, detect_breakout_breakdown
 from plotter import plot_trendlines
 from telegram_notifier import send_image_to_telegram
+import config  # Adjusted to import your config.py file
 
 # Global dictionary to store the last alert timestamp for each symbol
 previous_alerts = {}
@@ -35,7 +36,7 @@ async def check_for_breakouts_and_breakdowns(symbol, timeframe):
             await send_image_to_telegram(image_buffer)
 
 async def main():
-    symbols = config3.SELECTED_SYMBOLS  # Use the selected symbols directly from config3.py
+    symbols = config.SELECTED_SYMBOLS  # Use the selected symbols directly from config.py
     timeframe = '30m'
 
     while True:
