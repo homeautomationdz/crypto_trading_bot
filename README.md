@@ -14,6 +14,7 @@ pip install python-telegram-bot --upgrade
 
 # If you are using additional libraries (e.g., pandas, matplotlib, numpy, etc.), install them as well
 pip install pandas matplotlib numpy scipy
+pip install python-binance
 
 
 Step 4: Set Up Your Bot with BotFather
