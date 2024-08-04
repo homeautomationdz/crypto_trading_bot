@@ -1,6 +1,6 @@
 import pandas as pd
 from binance.client import Client
-import config3  # Adjust to your config file
+import config  # Adjust to your config file
 
 def fetch_binance_data(symbol, timeframe='30m', limit=100):
     try:
