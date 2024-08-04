@@ -1,6 +1,10 @@
 import pandas as pd
 from binance.client import Client
 import config
+import logging
+
+# Set up logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 class GetData:
     def __init__(self, symbol, timeframe='30m', limit=100):
@@ -22,5 +26,5 @@ class GetData:
             return data[['timestamp', 'open', 'high', 'low', 'close', 'volume', 
                           'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume']]
         except Exception as e:
-            print(f"Error fetching data for {self.symbol}: {e}")
+            logging.error(f"Error fetching data for {self.symbol}: {e}")
             return pd.DataFrame()
