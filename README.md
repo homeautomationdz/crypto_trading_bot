@@ -22,7 +22,7 @@ Open Telegram and search for the bot named BotFather.
 Start a chat with BotFather and use the command /newbot to create a new bot.
 Follow the prompts to set up your bot and receive a token. Make sure to store this token securely, as it will be used to authenticate your bot.
 Step 5: Create Your Configuration File
-Create a file named config.py (or config3.py, as per your previous setup) in your project directory to store your bot token and other configurations:
+Create a file named config.py (or config.py, as per your previous setup) in your project directory to store your bot token and other configurations:
 python
 # config.py
 

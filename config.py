@@ -1,4 +1,4 @@
-# config3.py
+# config.py
 
 # API credentials
 api_key = 'b4Cw5Z2a2uToBHunOedHBKabGhdn1pm2MA5PJALWF9nU7XJ6f2GrAKkijY4OdXYe'

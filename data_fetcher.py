@@ -1,3 +1,5 @@
+#file name data_fetcher.py
+
 import pandas as pd
 from binance.client import Client
 import config
@@ -28,3 +30,4 @@ class GetData:
         except Exception as e:
             logging.error(f"Error fetching data for {self.symbol}: {e}")
             return pd.DataFrame()
+        

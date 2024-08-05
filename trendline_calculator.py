@@ -1,3 +1,5 @@
+# file name trendline_calculator.py
+
 import numpy as np
 from scipy.signal import argrelextrema
 import pandas as pd

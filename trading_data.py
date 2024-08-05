@@ -1,3 +1,5 @@
+
+#file name trading_data.py
 import pandas as pd
 import logging
 
@@ -82,3 +84,4 @@ class TradingData:
             logging.info(f" - {key.replace('_', ' ').title()}: {value:.2f}" if isinstance(value, float) else f" - {key.replace('_', ' ').title()}: {value}")
 
         return metrics
+    

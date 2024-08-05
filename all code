@@ -1,0 +1,382 @@
+
+# config.py
+
+# API credentials
+api_key = 'b4Cw5Z2a2uToBHunOedHBKabGhdn1pm2MA5PJALWF9nU7XJ6f2GrAKkijY4OdXYe'
+api_secret = '1XyFpTQFkac5PJZYXysVSCcGKMkLPcqLzk8BOKWAmTc9kiQyMIK5hdrzbaw4cHXn'
+
+# Telegram bot token and chat ID
+bot_token = '7059673705:AAEPdxG0FuVarZLc2fqURr9W3Qb2NPDIc2c'
+chat_id = '1434650273'
+
+# Selected symbols (without 'USDT')
+SELECTED_SYMBOLS = [
+    'AAVEUSDT', 'ACEUSDT', 'ACHUSDT', 'ADAUSDT', 'AEVOUSDT', 'AGLDUSDT', 
+    'ALGOUSDT', 'ALICEUSDT', 'ALPHAUSDT', 'ALTUSDT', 'AMBUSDT', 'APTUSDT',
+    'ARBUSDT', 'ARKUSDT', 'ARPAUSDT', 'ARUSDT', 'ASTRUSDT', 'ATAUSDT', 
+    'ATOMUSDT', 'AUCTIONUSDT', 'AVAXUSDT', 'AXLUSDT', 'AXSUSDT', 
+    'BADGERUSDT', 'BAKEUSDT', 'BALUSDT', 'BANDUSDT', 'BATUSDT', 'BBUSDT'
+]
+
+#file name data_fetcher.py
+
+import pandas as pd
+from binance.client import Client
+import config
+import logging
+
+# Set up logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+class GetData:
+    def __init__(self, symbol, timeframe='30m', limit=100):
+        self.symbol = symbol
+        self.timeframe = timeframe
+        self.limit = limit
+        self.df = self.fetch_binance_data()
+        if not self.df.empty:
+            self.df['timestamp'] = pd.to_datetime(self.df['timestamp'], unit='ms')
+            self.df.set_index('timestamp', inplace=True)
+
+    def fetch_binance_data(self):
+        try:
+            client = Client(config.api_key, config.api_secret)
+            klines = client.get_historical_klines(self.symbol, self.timeframe, limit=self.limit)
+            data = pd.DataFrame(klines, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume', 
+                                                'close_time', 'quote_asset_volume', 'number_of_trades', 
+                                                'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume', 'ignore'])
+            return data[['timestamp', 'open', 'high', 'low', 'close', 'volume', 
+                          'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume']]
+        except Exception as e:
+            logging.error(f"Error fetching data for {self.symbol}: {e}")
+            return pd.DataFrame()
+        
+#file name main.pyimport asyncio
+from telegram import Bot  # Import the Bot class
+from data_fetcher import GetData
+from trendline_calculator import calculate_trendlines, detect_breakdowns
+from plotter import plot_trendlines
+from telegram_notifier import send_message_to_telegram
+from trading_data import TradingData
+import config
+import logging
+
+# Set up logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+async def send_start_message():
+    """Send a start message when the bot starts."""
+    bot = Bot(token=config.bot_token)
+    message = "Trading bot has started successfully!"
+    try:
+        await bot.send_message(chat_id=config.chat_id, text=message)
+        logging.info("Start message sent to Telegram.")
+    except Exception as e:
+        logging.error(f"Error sending start message to Telegram: {e}")
+
+async def process_symbol(symbol):
+    logging.info(f"Processing symbol: {symbol}")
+    data_fetcher = GetData(symbol)
+    trading_data = TradingData(data_fetcher.df)
+
+    trendline_peaks, trendline_troughs = calculate_trendlines(data_fetcher.df)
+    if trendline_peaks is None or trendline_troughs is None:
+        logging.warning(f"Not enough data to calculate trendlines for {symbol}.")
+        return
+
+    breakout_indices, breakdown_indices, touching_indices = detect_breakdowns(data_fetcher.df, trendline_peaks, trendline_troughs)
+
+    high_30h, low_30h = trading_data.update_data()
+    metrics = trading_data.calculate_metrics()
+
+    if metrics is None:
+        logging.warning(f"No metrics available for {symbol}.")
+        return
+
+    # Log metrics to the terminal
+    logging.info(f"Metrics for {symbol}:")
+    for key, value in metrics.items():
+        logging.info(f" - {key.replace('_', ' ').title()}: {value:.2f}" if isinstance(value, float) else f" - {key.replace('_', ' ').title()}: {value}")
+
+    # Check if price change is greater than 0.10%
+    if metrics['price_change'] is not None and metrics['price_change'] > 0.10:
+        # Generate the plot
+        image_buffer = plot_trendlines(
+            data_fetcher.df, trendline_peaks, trendline_troughs, breakout_indices, breakdown_indices,
+            touching_indices, symbol, data_fetcher.timeframe, high_30h, low_30h,
+            metrics['buy_volume'], metrics['sell_volume'], metrics['volume_difference'], metrics['price_change']
+        )
+
+        # Send metrics and plot to Telegram
+        await send_message_to_telegram(
+            symbol,
+            metrics['current_price'],
+            metrics['new_high'],
+            metrics['new_low'],
+            metrics['buy_volume'],
+            metrics['sell_volume'],
+            metrics['volume_difference'],
+            metrics['volume_btc'],
+            metrics['volume_percentage'],
+            metrics['support'],
+            metrics['resistance'],
+            metrics['distance_from_support'],
+            metrics['distance_from_resistance'],
+            metrics['price_change'],
+            image_buffer  # Pass the image buffer to the function
+        )
+    else:
+        logging.info(f"No significant price change for {symbol}. Price change: {metrics['price_change']:.2f}%. No update sent to Telegram.")
+
+async def main():
+    # Send a start message
+    await send_start_message()
+    
+    symbols = config.SELECTED_SYMBOLS
+    for symbol in symbols:
+        await process_symbol(symbol)  # Process each symbol one by one
+
+if __name__ == "__main__":
+    asyncio.run(main())
+
+    #file mane plotter.py
+
+    
+import matplotlib.pyplot as plt
+import io
+import numpy as np
+
+def plot_trendlines(data, trendline_peaks, trendline_troughs, breakout_indices, breakdown_indices, touching_indices, symbol, timeframe, high_30h, low_30h, buy_volume, sell_volume, volume_difference, price_change):
+    plt.figure(figsize=(14, 7))
+
+    # Plot closing price
+    plt.plot(data.index, data['close'], label='Close Price', color='blue')
+
+    # Create full arrays for trendlines
+    trendline_peaks_full = np.full(data.shape[0], np.nan)
+    trendline_troughs_full = np.full(data.shape[0], np.nan)
+
+    # Fill in the trendlines where applicable
+    trendline_peaks_full[-len(trendline_peaks):] = trendline_peaks
+    trendline_troughs_full[-len(trendline_troughs):] = trendline_troughs
+
+    # Plot trendlines
+    plt.plot(data.index, trendline_peaks_full, label='Resistance Trendline', linestyle='--', color='red')
+    plt.plot(data.index, trendline_troughs_full, label='Support Trendline', linestyle='--', color='green')
+
+    # Plot breakout and breakdown points
+    plt.scatter(data.loc[breakout_indices].index, data.loc[breakout_indices]['close'], color='blue', label='Breakout Points', marker='^')
+    plt.scatter(data.loc[breakdown_indices].index, data.loc[breakdown_indices]['close'], color='orange', label='Breakdown Points', marker='v')
+    plt.scatter(data.loc[touching_indices].index, data.loc[touching_indices]['close'], color='purple', label='Touch Points', marker='o')
+
+    # Add volume metrics as text
+    plt.text(data.index[-1], buy_volume, f'Buy Volume: {buy_volume}', color='green', fontsize=10, ha='right')
+    plt.text(data.index[-1], sell_volume, f'Sell Volume: {sell_volume}', color='red', fontsize=10, ha='right')
+    plt.text(data.index[-1], volume_difference, f'Volume Difference: {volume_difference}', color='gray', fontsize=10, ha='right')
+    plt.text(data.index[-1], price_change, f'Price Change in 30 min: {price_change}%', color='purple', fontsize=10, ha='right')
+
+    plt.xlabel('Timestamp')
+    plt.ylabel('Price')
+    plt.title(f'Trendline Breakout/Breakdown Detection for {symbol} ({timeframe})')
+    plt.legend()
+    plt.grid()
+    
+    # Save the plot to a BytesIO object
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png')
+    buf.seek(0)  # Move to the beginning of the BytesIO buffer
+    plt.close()  # Close the figure to free up memory
+    return buf  # Return the buffer
+
+#file name telegram_notifier.py
+
+from telegram import Bot
+from telegram.error import TelegramError
+import config
+import logging
+import asyncio
+
+async def send_message_to_telegram(symbol, current_price, new_high, new_low, buy_volume, sell_volume, volume_difference, volume_btc, volume_percentage, support, resistance, distance_from_support, distance_from_resistance, price_change, image_buffer=None):
+    bot = Bot(token=config.bot_token)
+    try:
+        message = f"Symbol: {symbol}\n"
+        message += f"New 30-hour High: {new_high}\n"
+        message += f"New 30-hour Low: {new_low}\n"
+        message += f"Last Candle 30 min Buy Volume: {buy_volume}\n"
+        message += f"Last Candle 30 min Sell Volume: {sell_volume}\n"
+        message += f"Volume Difference: {volume_difference}\n"
+        message += f"Price Change in 30 min: {price_change}%\n"
+
+        # Send the message
+        await bot.send_message(chat_id=config.chat_id, text=message)
+
+        # If an image buffer is provided, send the plot
+        if image_buffer:
+            await bot.send_photo(chat_id=config.chat_id, photo=image_buffer)
+            logging.info(f"Plot sent to Telegram for symbol {symbol}")
+
+    except TelegramError as e:
+        logging.error(f"Error sending message to Telegram for symbol {symbol}: {e}")
+
+#file name trading_data.py
+import pandas as pd
+import logging
+
+class TradingData:
+    def __init__(self, data):
+        self.data = data
+
+    def update_data(self):
+        thirty_hours_ago = self.data.index[-1] - pd.Timedelta(hours=30)
+        recent_data = self.data[self.data.index >= thirty_hours_ago]
+
+        if not recent_data.empty:
+            high_30h = recent_data["high"].max()
+            low_30h = recent_data["low"].min()
+        else:
+            high_30h = None
+            low_30h = None
+
+        return high_30h, low_30h
+
+    def get_last_candle_volume(self):
+        if not self.data.empty:
+            last_candle = self.data.iloc[-1]
+            buy_volume = pd.to_numeric(last_candle["taker_buy_base_asset_volume"], errors='coerce')
+            sell_volume = pd.to_numeric(last_candle["taker_buy_quote_asset_volume"], errors='coerce')
+            return buy_volume if not pd.isna(buy_volume) else 0.0, sell_volume if not pd.isna(sell_volume) else 0.0
+        return 0.0, 0.0
+
+    def calculate_volume_difference(self, buy_volume, sell_volume):
+        return buy_volume - sell_volume
+
+    def get_price_change(self):
+        if not self.data.empty:
+            open_price = pd.to_numeric(self.data['open'].iloc[-1], errors='coerce')
+            close_price = pd.to_numeric(self.data['close'].iloc[-1], errors='coerce')
+            if pd.isna(open_price) or pd.isna(close_price):
+                return None
+            return round((close_price - open_price) / open_price * 100, 2)
+        return None
+
+    def calculate_metrics(self):
+        """Calculate additional metrics for the trading data."""
+        if self.data.empty:
+            logging.warning("No data available for calculating metrics.")
+            return None
+
+        current_price = pd.to_numeric(self.data['close'].iloc[-1], errors='coerce')
+        new_high = pd.to_numeric(self.data['high'].max(), errors='coerce')
+        new_low = pd.to_numeric(self.data['low'].min(), errors='coerce')
+        buy_volume, sell_volume = self.get_last_candle_volume()
+        volume_difference = self.calculate_volume_difference(buy_volume, sell_volume)
+
+        # Calculate volume in BTC
+        volume_btc = buy_volume * current_price  # Assuming buy_volume is in base asset
+        volume_percentage = (volume_btc / (buy_volume + sell_volume)) * 100 if (buy_volume + sell_volume) > 0 else 0
+
+        # Support and Resistance levels
+        support = new_low
+        resistance = new_high
+        distance_from_support = ((current_price - support) / support) * 100 if support > 0 else None
+        distance_from_resistance = ((current_price - resistance) / resistance) * 100 if resistance > 0 else None
+
+        metrics = {
+            'current_price': current_price,
+            'new_high': new_high,
+            'new_low': new_low,
+            'buy_volume': buy_volume,
+            'sell_volume': sell_volume,
+            'volume_difference': volume_difference,
+            'volume_btc': volume_btc,
+            'volume_percentage': volume_percentage,
+            'support': support,
+            'resistance': resistance,
+            'distance_from_support': distance_from_support,
+            'distance_from_resistance': distance_from_resistance,
+            'price_change': self.get_price_change()
+        }
+
+        # Log metrics to the terminal
+        logging.info(f"Metrics for {self.data.index[-1]}:")
+        for key, value in metrics.items():
+            logging.info(f" - {key.replace('_', ' ').title()}: {value:.2f}" if isinstance(value, float) else f" - {key.replace('_', ' ').title()}: {value}")
+
+        return metrics
+    
+#file name trendline_calculator.py
+
+import numpy as np
+from scipy.signal import argrelextrema
+import pandas as pd
+import logging
+
+def calculate_trendlines(data):
+    window_size = 10
+    valid_data = data.iloc[:-5].copy()  # Ignore the last few candles
+
+    valid_data['timestamp'] = valid_data.index.astype(np.int64) // 10**9  # Convert to seconds
+
+    valid_data['peaks'] = valid_data.iloc[argrelextrema(valid_data['high'].values, np.greater_equal, order=window_size)[0]]['high']
+    valid_data['troughs'] = valid_data.iloc[argrelextrema(valid_data['low'].values, np.less_equal, order=window_size)[0]]['low']
+
+    peaks = valid_data.dropna(subset=['peaks'])
+    troughs = valid_data.dropna(subset=['troughs'])
+
+    if len(peaks) < 2 or len(troughs) < 2:
+        logging.warning("Not enough peaks or troughs to calculate trendlines.")
+        return None, None
+
+    x_peaks = peaks['timestamp'].values[-2:]  # Use the numeric timestamps
+    y_peaks = peaks['peaks'].values[-2:]
+
+    x_peaks = x_peaks.astype(float)
+    y_peaks = y_peaks.astype(float)
+
+    if np.isnan(x_peaks).any() or np.isnan(y_peaks).any():
+        logging.warning(f"NaN values found in peaks: x_peaks={x_peaks}, y_peaks={y_peaks}")
+        return None, None
+
+    fit_peaks = np.polyfit(x_peaks, y_peaks, 1)
+    trendline_peaks = np.polyval(fit_peaks, valid_data['timestamp'].values)
+
+    x_troughs = troughs['timestamp'].values[-2:]
+    y_troughs = troughs['troughs'].values[-2:]
+
+    x_troughs = x_troughs.astype(float)
+    y_troughs = y_troughs.astype(float)
+
+    if np.isnan(x_troughs).any() or np.isnan(y_troughs).any():
+        logging.warning(f"NaN values found in troughs: x_troughs={x_troughs}, y_troughs={y_troughs}")
+        return None, None
+
+    fit_troughs = np.polyfit(x_troughs, y_troughs, 1)
+    trendline_troughs = np.polyval(fit_troughs, valid_data['timestamp'].values)
+
+    return trendline_peaks, trendline_troughs
+
+def detect_breakdowns(data, trendline_peaks, trendline_troughs):
+    if trendline_peaks is None or trendline_troughs is None:
+        return pd.Index([]), pd.Index([]), pd.Index([])
+
+    trendline_peaks_full = np.full(data.shape[0], np.nan)
+    trendline_troughs_full = np.full(data.shape[0], np.nan)
+
+    trendline_peaks_full[-len(trendline_peaks):] = trendline_peaks
+    trendline_troughs_full[-len(trendline_troughs):] = trendline_troughs
+
+    trendline_peaks_full = pd.Series(trendline_peaks_full, index=data.index, dtype='float64')
+    trendline_troughs_full = pd.Series(trendline_troughs_full, index=data.index, dtype='float64')
+
+    data['close'] = data['close'].astype(float)
+
+    breakout_indices = data[data['close'] > trendline_peaks_full].index
+    breakdown_indices = data[data['close'] < trendline_troughs_full].index
+    touching_indices = data[(data['close'] == trendline_peaks_full) | (data['close'] == trendline_troughs_full)].index
+    return breakout_indices, breakdown_indices, touching_indices
+
+
+
+
+
+
