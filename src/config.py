@@ -33,4 +33,4 @@ SHORT_WINDOW = 5  # Short-term moving average window
 LONG_WINDOW = 20   # Long-term moving average window
 
 # Timeframe for data fetching
-TIMEFRAME = '4h'  # Default timeframe (can be changed to '1m', '5m', '1h', '1d', etc.)
+TIMEFRAME = '1h'  # Default timeframe (can be changed to '1m', '5m', '1h', '1d', etc.)

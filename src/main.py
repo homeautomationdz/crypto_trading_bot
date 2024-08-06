@@ -60,6 +60,11 @@ async def process_symbol(symbol, backtest=True):
         # Get high and low prices for multiple timeframes
         timeframe_data = update_data_multiple_timeframes(data_fetcher.df)
         high_timeframe, low_timeframe = update_data(data_fetcher.df)
+        
+        # Ensure high_timeframe and low_timeframe are floats
+        high_timeframe = float(high_timeframe)
+        low_timeframe = float(low_timeframe)
+
         metrics = trading_data.calculate_metrics()
 
         if metrics is None:
@@ -70,13 +75,11 @@ async def process_symbol(symbol, backtest=True):
         current_price = metrics['current_price']
         proximity_alert = ""
         
-        for timeframe, levels in timeframe_data.items():
-            high = float(levels['high'])  # Ensure high is a float
-            low = float(levels['low'])    # Ensure low is a float
-            if abs(current_price - high) / high <= 0.05:  # Within 5%
-                proximity_alert += "++"
-            if abs(current_price - low) / low <= 0.05:  # Within 5%
-                proximity_alert += "++"
+        # Check proximity to support and resistance levels
+        if abs(current_price - low_timeframe) / low_timeframe <= 0.05:  # Within 5% of support
+            proximity_alert = "🟢"
+        elif abs(current_price - high_timeframe) / high_timeframe <= 0.05:  # Within 5% of resistance
+            proximity_alert = "🔴"
 
         # Log metrics to the terminal
         logging.info(f"Metrics for {symbol}:")
@@ -98,8 +101,8 @@ async def process_symbol(symbol, backtest=True):
             await send_message_to_telegram(
                 symbol + proximity_alert,  # Append proximity alert to symbol
                 metrics['current_price'],
-                float(high_timeframe),  # Convert to float
-                float(low_timeframe),    # Convert to float
+                high_timeframe,  # Ensure these are floats
+                low_timeframe,    # Ensure these are floats
                 metrics['buy_volume'],
                 metrics['sell_volume'],
                 metrics['volume_difference'],
