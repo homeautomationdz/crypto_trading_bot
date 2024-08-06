@@ -1,8 +1,8 @@
+# src/telegram_notifier.py
 from telegram import Bot
 import logging
 import config  # Ensure you import the config module
 import pandas as pd  # Import pandas for date formatting
-
 async def send_message_to_telegram(symbol, current_price, high_timeframe, low_timeframe, buy_volume, sell_volume, volume_difference, volume_btc, volume_percentage, support, resistance, distance_from_support, distance_from_resistance, price_change, image_buffer):
     """
     Send a message to Telegram with trading metrics and a plot image.
@@ -43,6 +43,7 @@ async def send_message_to_telegram(symbol, current_price, high_timeframe, low_ti
         f"📏 Distance from Resistance: {distance_from_resistance:.2f}%\n"
         f"📉 Price Change: {price_change:.2f}%\n"
         f"Time: {pd.Timestamp.now().strftime('%d-%m-%Y %I:%M:%S %p')}\n"
+        f"𝙏𝙑 Trading View Chart (Click here) (https://www.tradingview.com/chart?symbol=Binance%3A{symbol}USDT&interval={config.TIMEFRAME})"
     )
 
     try:

@@ -1,3 +1,4 @@
+# src/main.py
 import asyncio
 from telegram import Bot
 from data_fetcher import GetData
@@ -10,6 +11,7 @@ import config
 import logging
 import numpy as np
 import traceback
+from data_processing import update_data, update_data_multiple_timeframes  # Import update_data_multiple_timeframes
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -55,16 +57,26 @@ async def process_symbol(symbol, backtest=True):
 
         breakout_indices, breakdown_indices, touching_indices = detect_breakdowns(data_fetcher.df, trendline_peaks, trendline_troughs)
 
-        high_timeframe, low_timeframe = trading_data.update_data()
+        # Get high and low prices for multiple timeframes
+        timeframe_data = update_data_multiple_timeframes(data_fetcher.df)
+        high_timeframe, low_timeframe = update_data(data_fetcher.df)
         metrics = trading_data.calculate_metrics()
 
         if metrics is None:
             logging.warning(f"No metrics available for {symbol}.")
             return
 
-        # Ensure high_timeframe and low_timeframe are floats
-        high_timeframe = float(high_timeframe) if high_timeframe is not None else 0.0
-        low_timeframe = float(low_timeframe) if low_timeframe is not None else 0.0
+        # Check proximity to high and low prices
+        current_price = metrics['current_price']
+        proximity_alert = ""
+        
+        for timeframe, levels in timeframe_data.items():
+            high = float(levels['high'])  # Ensure high is a float
+            low = float(levels['low'])    # Ensure low is a float
+            if abs(current_price - high) / high <= 0.05:  # Within 5%
+                proximity_alert += "++"
+            if abs(current_price - low) / low <= 0.05:  # Within 5%
+                proximity_alert += "++"
 
         # Log metrics to the terminal
         logging.info(f"Metrics for {symbol}:")
@@ -77,16 +89,17 @@ async def process_symbol(symbol, backtest=True):
             image_buffer = plot_trendlines(
                 data_fetcher.df, trendline_peaks, trendline_troughs, breakout_indices, breakdown_indices,
                 touching_indices, symbol, data_fetcher.timeframe, high_timeframe, low_timeframe,
-                metrics['buy_volume'], metrics['sell_volume'], metrics['volume_difference'], metrics['price_change']
+                metrics['buy_volume'], metrics['sell_volume'], metrics['volume_difference'], metrics['price_change'],
+                timeframe_data  # Pass the timeframe data for plotting
             )
 
             # Send metrics and plot to Telegram
             logging.info(f"Sending Telegram notification for {symbol}.")
             await send_message_to_telegram(
-                symbol,
+                symbol + proximity_alert,  # Append proximity alert to symbol
                 metrics['current_price'],
-                high_timeframe,
-                low_timeframe,
+                float(high_timeframe),  # Convert to float
+                float(low_timeframe),    # Convert to float
                 metrics['buy_volume'],
                 metrics['sell_volume'],
                 metrics['volume_difference'],

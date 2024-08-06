@@ -1,3 +1,4 @@
+# src/data_processing.py
 import pandas as pd
 import logging
 import numpy as np
@@ -47,6 +48,44 @@ def update_data(data):
         logging.error(f"Error updating data: {e}")
         logging.error(traceback.format_exc())
         return None, None
+
+def update_data_multiple_timeframes(data):
+    """
+    Update data to get the highest and lowest prices for multiple timeframes.
+    
+    Args:
+        data (pandas.DataFrame): The price data.
+    
+    Returns:
+        dict: A dictionary containing high and low prices for specified timeframes.
+    """
+    timeframes = ['30m', '1h', '4h', '1d']
+    results = {}
+    
+    for timeframe in timeframes:
+        try:
+            if timeframe.endswith('h'):
+                hours = int(timeframe[:-1])
+                time_delta = pd.Timedelta(hours=hours)
+            elif timeframe.endswith('m'):
+                minutes = int(timeframe[:-1])
+                time_delta = pd.Timedelta(minutes=minutes)
+            else:
+                continue
+            
+            timeframe_ago = data.index[-1] - time_delta
+            recent_data = data[data.index >= timeframe_ago]
+
+            if not recent_data.empty:
+                high = recent_data["high"].max()
+                low = recent_data["low"].min()
+                results[timeframe] = {'high': high, 'low': low}
+                logging.info(f"Highest price in the last {timeframe}: {high}")
+                logging.info(f"Lowest price in the last {timeframe}: {low}")
+        except Exception as e:
+            logging.error(f"Error updating data for timeframe {timeframe}: {e}")
+    
+    return results
 
 def calculate_last_candle_volume(data):
     """
